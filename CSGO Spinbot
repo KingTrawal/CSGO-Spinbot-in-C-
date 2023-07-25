@@ -1,0 +1,74 @@
+using System;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
+
+namespace Spinbot
+{
+    class Program
+    {
+        static void Main(string[] args)
+        {
+            IntPtr hwnd = Process.GetProcessesByName("csgo")[0].MainWindowHandle;
+            uint engine = GetModuleBaseAddress("engine.dll", hwnd);
+            uint localPlayer = ReadMemory<uint>(engine + 0x4D5234);
+
+            while (true)
+            {
+                WriteMemory<float>(localPlayer + 0x64, 180f);
+                WriteMemory<byte>(localPlayer + 0x3336, 6);
+
+                System.Threading.Thread.Sleep(10);
+            }
+        }
+
+        static uint GetModuleBaseAddress(string moduleName, IntPtr hwnd)
+        {
+            ProcessModuleCollection modules = Process.GetProcessById((int)hwnd).Modules;
+            foreach (ProcessModule module in modules)
+            {
+                if (module.ModuleName == moduleName)
+                {
+                    return (uint)module.BaseAddress;
+                }
+            }
+
+            return 0;
+        }
+
+        static T ReadMemory<T>(uint address) where T : struct
+        {
+            byte[] buffer = new byte[Marshal.SizeOf(typeof(T))];
+            ReadProcessMemory((int)Process.GetCurrentProcess().Handle, address, buffer, buffer.Length, out int bytesRead);
+            return ByteArrayToStructure<T>(buffer);
+        }
+
+        static void WriteMemory<T>(uint address, T value) where T : struct
+        {
+            byte[] buffer = StructureToByteArray(value);
+            WriteProcessMemory((int)Process.GetCurrentProcess().Handle, address, buffer, buffer.Length, out int bytesWritten);
+        }
+
+        static T ByteArrayToStructure<T>(byte[] bytes) where T : struct
+        {
+            GCHandle handle = GCHandle.Alloc(bytes, GCHandleType.Pinned);
+            T result = (T)Marshal.PtrToStructure(handle.AddrOfPinnedObject(), typeof(T));
+            handle.Free();
+            return result;
+        }
+
+        static byte[] StructureToByteArray<T>(T obj) where T : struct
+        {
+            byte[] bytes = new byte[Marshal.SizeOf(obj)];
+            GCHandle handle = GCHandle.Alloc(bytes, GCHandleType.Pinned);
+            Marshal.StructureToPtr(obj, handle.AddrOfPinnedObject(), true);
+            handle.Free();
+            return bytes;
+        }
+
+        [DllImport("kernel32.dll")]
+        static extern bool ReadProcessMemory(int hProcess, uint lpBaseAddress, [Out] byte[] lpBuffer, int dwSize, out int lpNumberOfBytesRead);
+
+        [DllImport("kernel32.dll")]
+        static extern bool WriteProcessMemory(int hProcess, uint lpBaseAddress, byte[] lpBuffer, int dwSize, out int lpNumberOfBytesWritten);
+    }
+}
